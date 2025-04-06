@@ -1,19 +1,45 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { GoogleLogin, CredentialResponse } from '@react-oauth/google';
 import { Link2, Shield, Lock } from 'lucide-react';
 import toast, { Toaster } from 'react-hot-toast';
+
+interface UrlData {
+  shortCode: string;
+  originalUrl: string;
+}
 
 function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [url, setUrl] = useState('');
   const [shortUrl, setShortUrl] = useState('');
   const [userEmail, setUserEmail] = useState('');
+  const [userId, setUserId] = useState('');
+  const [urls, setUrls] = useState<UrlData[]>([]);
+
+  useEffect(() => {
+    if (userId) {
+      fetchUrls();
+    }
+  }, [userId]);
+
+  const fetchUrls = async () => {
+    try {
+      const response = await fetch(`/api/urls?userId=${userId}`);
+      const data = await response.json();
+      if (response.ok) {
+        setUrls(data.urls);
+      }
+    } catch (error) {
+      console.error('Error fetching URLs:', error);
+      toast.error('Failed to fetch your URLs');
+    }
+  };
 
   const handleSuccess = async (credentialResponse: CredentialResponse) => {
     try {
-      // Decode the JWT token to get user information
       const decoded = JSON.parse(atob(credentialResponse.credential!.split('.')[1]));
       setUserEmail(decoded.email);
+      setUserId(decoded.sub); // Use the Google user ID as our userId
       setIsAuthenticated(true);
       toast.success('Successfully logged in!');
     } catch (error) {
@@ -23,6 +49,7 @@ function App() {
   };
 
   const handleError = () => {
+    console.error('Google Sign-In failed');
     toast.error('Login Failed');
   };
 
@@ -40,13 +67,27 @@ function App() {
         throw new Error('Invalid protocol');
       }
 
-      // Here we would typically make an API call to create the short URL
-      // For demo purposes, we'll just create a random short code
-      const shortCode = Math.random().toString(36).substring(7);
-      setShortUrl(`${window.location.origin}/${shortCode}`);
-      toast.success('URL shortened successfully!');
+      const response = await fetch('/api/urls', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ url, userId }),
+      });
+
+      const data = await response.json();
+      
+      if (response.ok) {
+        const newShortUrl = `${window.location.origin}/${data.shortCode}`;
+        setShortUrl(newShortUrl);
+        toast.success('URL shortened successfully!');
+        fetchUrls(); // Refresh the URLs list
+      } else {
+        throw new Error(data.error);
+      }
     } catch (error) {
-      toast.error('Please enter a valid URL');
+      console.error('Error shortening URL:', error);
+      toast.error('Failed to shorten URL');
     }
   };
 
@@ -71,7 +112,9 @@ function App() {
                 <GoogleLogin
                   onSuccess={handleSuccess}
                   onError={handleError}
-                  useOneTap
+                  width="300"
+                  useOneTap={false}
+                  auto_select={false}
                 />
               </div>
             </div>
@@ -121,6 +164,36 @@ function App() {
                     >
                       Copy
                     </button>
+                  </div>
+                </div>
+              )}
+
+              {urls.length > 0 && (
+                <div className="mt-8">
+                  <h3 className="text-xl font-semibold mb-4">Your URLs</h3>
+                  <div className="space-y-4">
+                    {urls.map((urlData) => (
+                      <div key={urlData.shortCode} className="p-4 bg-gray-700 rounded">
+                        <p className="text-sm text-gray-300 mb-2">{urlData.originalUrl}</p>
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="text"
+                            value={`${window.location.origin}/${urlData.shortCode}`}
+                            readOnly
+                            className="w-full px-3 py-2 bg-gray-600 rounded"
+                          />
+                          <button
+                            onClick={() => {
+                              navigator.clipboard.writeText(`${window.location.origin}/${urlData.shortCode}`);
+                              toast.success('Copied to clipboard!');
+                            }}
+                            className="px-4 py-2 bg-blue-600 rounded hover:bg-blue-700 transition duration-200"
+                          >
+                            Copy
+                          </button>
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 </div>
               )}
