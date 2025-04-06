@@ -15,6 +15,7 @@ function App() {
   const [userEmail, setUserEmail] = useState('');
   const [userId, setUserId] = useState('');
   const [urls, setUrls] = useState<UrlData[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
     if (userId) {
@@ -24,11 +25,16 @@ function App() {
 
   const fetchUrls = async () => {
     try {
-      const response = await fetch(`/api/urls?userId=${userId}`);
-      const data = await response.json();
-      if (response.ok) {
-        setUrls(data.urls);
+      const response = await fetch(`/.netlify/functions/urls?userId=${userId}`);
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
       }
+      const contentType = response.headers.get("content-type");
+      if (!contentType || !contentType.includes("application/json")) {
+        throw new TypeError("Response was not JSON");
+      }
+      const data = await response.json();
+      setUrls(data.urls || []);
     } catch (error) {
       console.error('Error fetching URLs:', error);
       toast.error('Failed to fetch your URLs');
@@ -39,7 +45,7 @@ function App() {
     try {
       const decoded = JSON.parse(atob(credentialResponse.credential!.split('.')[1]));
       setUserEmail(decoded.email);
-      setUserId(decoded.sub); // Use the Google user ID as our userId
+      setUserId(decoded.sub);
       setIsAuthenticated(true);
       toast.success('Successfully logged in!');
     } catch (error) {
@@ -55,19 +61,22 @@ function App() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setIsLoading(true);
     
     if (!url) {
       toast.error('Please enter a URL');
+      setIsLoading(false);
       return;
     }
 
     try {
+      // Validate URL format
       const urlObject = new URL(url);
       if (!['http:', 'https:'].includes(urlObject.protocol)) {
         throw new Error('Invalid protocol');
       }
 
-      const response = await fetch('/api/urls', {
+      const response = await fetch('/.netlify/functions/urls', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -75,19 +84,27 @@ function App() {
         body: JSON.stringify({ url, userId }),
       });
 
-      const data = await response.json();
-      
-      if (response.ok) {
-        const newShortUrl = `${window.location.origin}/${data.shortCode}`;
-        setShortUrl(newShortUrl);
-        toast.success('URL shortened successfully!');
-        fetchUrls(); // Refresh the URLs list
-      } else {
-        throw new Error(data.error);
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to shorten URL');
       }
+
+      const contentType = response.headers.get("content-type");
+      if (!contentType || !contentType.includes("application/json")) {
+        throw new TypeError("Response was not JSON");
+      }
+
+      const data = await response.json();
+      const newShortUrl = `${window.location.origin}/.netlify/functions/urls/${data.shortCode}`;
+      setShortUrl(newShortUrl);
+      toast.success('URL shortened successfully!');
+      fetchUrls();
+      setUrl(''); // Clear input after successful submission
     } catch (error) {
       console.error('Error shortening URL:', error);
-      toast.error('Failed to shorten URL');
+      toast.error(error instanceof Error ? error.message : 'Failed to shorten URL');
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -135,13 +152,17 @@ function App() {
                     onChange={(e) => setUrl(e.target.value)}
                     className="w-full px-4 py-2 rounded bg-gray-700 border border-gray-600 focus:outline-none focus:border-blue-500"
                     placeholder="https://example.com"
+                    disabled={isLoading}
                   />
                 </div>
                 <button
                   type="submit"
-                  className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded transition duration-200"
+                  className={`w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded transition duration-200 ${
+                    isLoading ? 'opacity-50 cursor-not-allowed' : ''
+                  }`}
+                  disabled={isLoading}
                 >
-                  Shorten URL
+                  {isLoading ? 'Shortening...' : 'Shorten URL'}
                 </button>
               </form>
 
@@ -178,13 +199,13 @@ function App() {
                         <div className="flex items-center gap-2">
                           <input
                             type="text"
-                            value={`${window.location.origin}/${urlData.shortCode}`}
+                            value={`${window.location.origin}/.netlify/functions/urls/${urlData.shortCode}`}
                             readOnly
                             className="w-full px-3 py-2 bg-gray-600 rounded"
                           />
                           <button
                             onClick={() => {
-                              navigator.clipboard.writeText(`${window.location.origin}/${urlData.shortCode}`);
+                              navigator.clipboard.writeText(`${window.location.origin}/.netlify/functions/urls/${urlData.shortCode}`);
                               toast.success('Copied to clipboard!');
                             }}
                             className="px-4 py-2 bg-blue-600 rounded hover:bg-blue-700 transition duration-200"

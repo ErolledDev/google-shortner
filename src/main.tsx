@@ -8,7 +8,10 @@ const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || '';
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <GoogleOAuthProvider clientId={GOOGLE_CLIENT_ID} onScriptLoadError={() => console.error('Google Sign-In script failed to load')}>
+    <GoogleOAuthProvider 
+      clientId={GOOGLE_CLIENT_ID}
+      onScriptLoadError={() => console.error('Google Sign-In script failed to load')}
+    >
       <App />
     </GoogleOAuthProvider>
   </StrictMode>
